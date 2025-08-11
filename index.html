@@ -13,30 +13,63 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
+            /* Dark theme faded pattern */
+            background-color: #111827; /* bg-gray-900 */
+            background-image: radial-gradient(#4b5563 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        /* Custom styles for file input */
+        .file-input-button {
+            cursor: pointer;
         }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 flex flex-col items-center justify-center min-h-screen p-4">
+<body class="text-gray-200 flex flex-col items-center justify-center min-h-screen p-4">
 
-    <div class="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-6 md:p-8 text-center">
-        <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Dog Breed Classifier 🐕</h1>
-        <p class="text-gray-600 mb-6">This tool uses a machine learning model to identify different dog-like animals in real-time.</p>
+    <div class="w-full max-w-2xl bg-gray-800/80 backdrop-blur-sm rounded-2xl shadow-2xl shadow-blue-500/10 p-6 md:p-8 text-center border border-gray-700">
+        <h1 class="text-3xl md:text-4xl font-bold text-white mb-2">Canine Classifier 🐾</h1>
+        <p class="text-gray-400 mb-6">Use your webcam or upload an image to identify dog-like animals.</p>
 
-        <!-- Start Button -->
-        <button id="start-button" type="button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
-            Start Camera
-        </button>
-
-        <!-- Webcam and Label Containers -->
-        <div id="webcam-container" class="mt-6 rounded-lg overflow-hidden w-full aspect-video bg-gray-200 flex items-center justify-center">
-            <div id="loading-spinner" class="hidden animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
+        <!-- Tabs for Webcam/Upload -->
+        <div class="flex justify-center border-b border-gray-600 mb-6">
+            <button id="webcam-tab" class="px-4 py-2 text-lg font-medium text-white border-b-2 border-blue-500">Webcam</button>
+            <button id="upload-tab" class="px-4 py-2 text-lg font-medium text-gray-400 border-b-2 border-transparent hover:text-white">Upload Image</button>
         </div>
+
+        <!-- Content Area -->
+        <div id="content-area">
+            <!-- Webcam Content -->
+            <div id="webcam-content">
+                <div id="webcam-container" class="mt-6 rounded-lg overflow-hidden w-full aspect-video bg-gray-900 flex items-center justify-center">
+                    <p id="webcam-placeholder" class="text-gray-500">Camera will appear here</p>
+                </div>
+                 <button id="start-button" type="button" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                    Start Camera
+                </button>
+            </div>
+
+            <!-- Upload Content (hidden by default) -->
+            <div id="upload-content" class="hidden">
+                <div id="image-preview-container" class="mt-6 rounded-lg overflow-hidden w-full aspect-video bg-gray-900 flex items-center justify-center">
+                    <img id="image-preview" class="hidden max-h-full max-w-full" />
+                    <p id="upload-placeholder" class="text-gray-500">Your uploaded image will appear here</p>
+                </div>
+                <label for="image-upload" class="file-input-button mt-4 inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                    Choose an Image
+                </label>
+                <input type="file" id="image-upload" class="hidden" accept="image/*" />
+            </div>
+        </div>
+        
+        <div id="loading-spinner" class="hidden my-4 flex justify-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-500"></div>
+        </div>
+        
         <div id="label-container" class="mt-4 text-left space-y-3"></div>
     </div>
     
     <footer class="mt-8 text-center text-gray-500 text-sm">
         <p>Powered by Teachable Machine & TensorFlow.js</p>
-        <p>To use, upload this file along with your model files (`model.json`, `weights.bin`, `metadata.json`) to a GitHub repository and enable GitHub Pages.</p>
     </footer>
 
     <!-- TensorFlow.js and Teachable Machine Libraries -->
@@ -44,99 +77,193 @@
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
     <script type="text/javascript">
-        // --- Teachable Machine Model ---
+        // --- Teachable Machine Model & UI Logic ---
 
-        // The URL for your model, hosted in the same repository
         const URL = "./";
-
         let model, webcam, labelContainer, maxPredictions;
+        let animationFrameId;
+
+        // --- DOM Elements ---
+        const webcamTab = document.getElementById('webcam-tab');
+        const uploadTab = document.getElementById('upload-tab');
+        const webcamContent = document.getElementById('webcam-content');
+        const uploadContent = document.getElementById('upload-content');
+        
         const startButton = document.getElementById('start-button');
         const webcamContainer = document.getElementById('webcam-container');
+        const webcamPlaceholder = document.getElementById('webcam-placeholder');
+        
+        const imageUpload = document.getElementById('image-upload');
+        const imagePreview = document.getElementById('image-preview');
+        const imagePreviewContainer = document.getElementById('image-preview-container');
+        const uploadPlaceholder = document.getElementById('upload-placeholder');
+
         const loadingSpinner = document.getElementById('loading-spinner');
+        labelContainer = document.getElementById("label-container");
 
-        // Event listener for the start button
-        startButton.addEventListener('click', init);
+        // --- Tab Switching Logic ---
+        webcamTab.addEventListener('click', () => switchTab('webcam'));
+        uploadTab.addEventListener('click', () => switchTab('upload'));
 
-        // Load the image model and setup the webcam
-        async function init() {
-            // Show loading spinner and disable button
-            startButton.disabled = true;
-            startButton.textContent = 'Loading Model...';
-            loadingSpinner.classList.remove('hidden');
+        function switchTab(tab) {
+            if (tab === 'webcam') {
+                webcamTab.classList.add('border-blue-500', 'text-white');
+                webcamTab.classList.remove('border-transparent', 'text-gray-400');
+                uploadTab.classList.add('border-transparent', 'text-gray-400');
+                uploadTab.classList.remove('border-blue-500', 'text-white');
+                
+                webcamContent.classList.remove('hidden');
+                uploadContent.classList.add('hidden');
+                stopWebcam(); // Stop webcam if running
+            } else { // 'upload'
+                uploadTab.classList.add('border-blue-500', 'text-white');
+                uploadTab.classList.remove('border-transparent', 'text-gray-400');
+                webcamTab.classList.add('border-transparent', 'text-gray-400');
+                webcamTab.classList.remove('border-blue-500', 'text-white');
 
+                uploadContent.classList.remove('hidden');
+                webcamContent.classList.add('hidden');
+                stopWebcam(); // Stop webcam if running
+            }
+            // Clear previous predictions
+            labelContainer.innerHTML = '';
+        }
+
+        // --- Model Initialization ---
+        async function loadModel() {
             const modelURL = URL + "model.json";
             const metadataURL = URL + "metadata.json";
-
             try {
-                // Load the model and metadata
                 model = await tmImage.load(modelURL, metadataURL);
                 maxPredictions = model.getTotalClasses();
-
-                // Setup webcam
-                const flip = true; // whether to flip the webcam
-                webcam = new tmImage.Webcam(400, 400, flip); // width, height, flip
-                await webcam.setup(); // request access to the webcam
-                await webcam.play();
-                window.requestAnimationFrame(loop);
-
-                // Append webcam canvas to the container
-                webcamContainer.innerHTML = ''; // Clear the container
-                webcamContainer.appendChild(webcam.canvas);
-                
-                // Create the label container elements
-                labelContainer = document.getElementById("label-container");
-                for (let i = 0; i < maxPredictions; i++) { 
-                    const div = document.createElement("div");
-                    div.className = "flex items-center justify-between";
-                    const label = document.createElement("div");
-                    label.className = "w-1/4 text-lg font-medium";
-                    const progressBarContainer = document.createElement("div");
-                    progressBarContainer.className = "w-3/4 bg-gray-200 rounded-full h-6";
-                    const progressBar = document.createElement("div");
-                    progressBar.className = "bg-blue-600 h-6 rounded-full text-xs font-medium text-blue-100 text-center p-1 leading-none";
-                    progressBar.style.width = "0%";
-                    
-                    progressBarContainer.appendChild(progressBar);
-                    div.appendChild(label);
-                    div.appendChild(progressBarContainer);
-                    labelContainer.appendChild(div);
-                }
-                
-                // Hide the start button
-                startButton.classList.add('hidden');
-
             } catch (error) {
-                console.error("Error initializing model:", error);
-                // Handle errors (e.g., model not found, webcam access denied)
+                console.error("Error loading model:", error);
+                alert("Failed to load the classification model. Please ensure model.json and metadata.json are present.");
+            }
+        }
+        // Load the model as soon as the page loads
+        loadModel();
+
+        // --- Webcam Logic ---
+        startButton.addEventListener('click', initWebcam);
+
+        async function initWebcam() {
+            if (!model) {
+                alert("Model is not loaded yet. Please wait.");
+                return;
+            }
+            startButton.disabled = true;
+            startButton.textContent = 'Starting...';
+            loadingSpinner.classList.remove('hidden');
+            webcamPlaceholder.classList.add('hidden');
+
+            const flip = true;
+            webcam = new tmImage.Webcam(400, 400, flip);
+            try {
+                await webcam.setup();
+                await webcam.play();
+                animationFrameId = window.requestAnimationFrame(loop);
+
+                webcamContainer.innerHTML = '';
+                webcamContainer.appendChild(webcam.canvas);
+                createLabelContainer();
+                startButton.classList.add('hidden');
+            } catch (e) {
+                console.error("Could not start webcam", e);
+                webcamPlaceholder.textContent = "Could not access camera. Please check permissions.";
+                webcamPlaceholder.classList.remove('hidden');
                 startButton.disabled = false;
-                startButton.textContent = 'Retry';
+                startButton.textContent = 'Start Camera';
+            } finally {
                 loadingSpinner.classList.add('hidden');
-                webcamContainer.innerHTML = '<p class="text-red-500">Failed to load model or access camera. Make sure your model files are in the same folder and you allow camera access.</p>';
             }
         }
 
-        // Main prediction loop
         async function loop() {
-            webcam.update(); // update the webcam frame
-            await predict();
-            window.requestAnimationFrame(loop);
+            webcam.update();
+            await predict(webcam.canvas);
+            animationFrameId = window.requestAnimationFrame(loop);
+        }
+        
+        function stopWebcam() {
+            if (webcam && webcam.isPlaying) {
+                webcam.stop();
+            }
+            if(animationFrameId) {
+                window.cancelAnimationFrame(animationFrameId);
+            }
+            webcamContainer.innerHTML = '';
+            webcamContainer.appendChild(webcamPlaceholder);
+            webcamPlaceholder.textContent = "Camera will appear here";
+            webcamPlaceholder.classList.remove('hidden');
+            startButton.classList.remove('hidden');
+            startButton.disabled = false;
+            startButton.textContent = 'Start Camera';
         }
 
-        // Run the webcam image through the image model
-        async function predict() {
-            // predict can take in an image, video or canvas html element
-            const prediction = await model.predict(webcam.canvas);
+        // --- Image Upload Logic ---
+        imageUpload.addEventListener('change', async (event) => {
+            if (!model) {
+                alert("Model is not loaded yet. Please wait.");
+                return;
+            }
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    imagePreview.src = e.target.result;
+                    imagePreview.classList.remove('hidden');
+                    uploadPlaceholder.classList.add('hidden');
+                    
+                    loadingSpinner.classList.remove('hidden');
+                    labelContainer.innerHTML = ''; // Clear old results
+                    
+                    // Wait for image to be fully loaded in the DOM before prediction
+                    imagePreview.onload = async () => {
+                        createLabelContainer();
+                        await predict(imagePreview);
+                        loadingSpinner.classList.add('hidden');
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // --- Shared Prediction Logic ---
+        async function predict(imageElement) {
+            const prediction = await model.predict(imageElement);
             for (let i = 0; i < maxPredictions; i++) {
                 const classPrediction = prediction[i].className;
-                const probability = (prediction[i].probability * 100).toFixed(2);
+                const probability = (prediction[i].probability * 100);
                 const labelDiv = labelContainer.childNodes[i].childNodes[0];
                 const progressBar = labelContainer.childNodes[i].childNodes[1].childNodes[0];
                 
                 labelDiv.innerHTML = classPrediction;
-                progressBar.style.width = probability + "%";
-                progressBar.innerHTML = probability + "%";
+                progressBar.style.width = probability.toFixed(2) + "%";
+                progressBar.innerHTML = probability.toFixed(2) + "%";
             }
         }
+        
+        function createLabelContainer() {
+            labelContainer.innerHTML = ''; // Clear previous labels
+            for (let i = 0; i < maxPredictions; i++) { 
+                const div = document.createElement("div");
+                div.className = "flex items-center justify-between";
+                const label = document.createElement("div");
+                label.className = "w-1/4 text-lg font-medium text-gray-200";
+                const progressBarContainer = document.createElement("div");
+                progressBarContainer.className = "w-3/4 bg-gray-700 rounded-full h-6";
+                const progressBar = document.createElement("div");
+                progressBar.className = "bg-blue-600 h-6 rounded-full text-xs font-medium text-blue-100 text-center p-1 leading-none transition-all duration-300 ease-in-out";
+                progressBar.style.width = "0%";
+                
+                progressBarContainer.appendChild(progressBar);
+                div.appendChild(label);
+                div.appendChild(progressBarContainer);
+                labelContainer.appendChild(div);
+            }
+        }
+
     </script>
 </body>
 </html>
