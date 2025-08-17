@@ -132,20 +132,23 @@
         // --- Model Initialization ---
         // A global variable to hold our labels
         let classLabels;
-        
+    
         async function loadModel() {
             const modelURL = URL + "model.json";
             const metadataURL = URL + "metadata.json";
             try {
                 // Load the model using the correct TensorFlow.js function
                 model = await tf.loadGraphModel(modelURL);
-        
+    
                 // Manually fetch and parse the metadata.json
                 const metadataResponse = await fetch(metadataURL);
                 const metadata = await metadataResponse.json();
-                classLabels = metadata.labels;
+                
+                // This is the only line that has been changed
+                classLabels = metadata.classes.map(c => c.label);
+                
                 maxPredictions = classLabels.length;
-        
+    
             } catch (error) {
                 // Log the detailed error to the console
                 console.error("Error loading model:", error);
@@ -293,5 +296,6 @@
     </script>
 </body>
 </html>
+
 
 
