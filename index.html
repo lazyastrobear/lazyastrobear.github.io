@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dog Breed Classification</title>
-    <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -30,15 +28,12 @@
         <h1 class="text-3xl md:text-4xl font-bold text-white mb-2">Canine Classifier 🐾</h1>
         <p class="text-gray-400 mb-6">Use your webcam or upload an image to identify dog-like animals.</p>
 
-        <!-- Tabs for Webcam/Upload -->
         <div class="flex justify-center border-b border-gray-600 mb-6">
             <button id="webcam-tab" class="px-4 py-2 text-lg font-medium text-white border-b-2 border-blue-500">Webcam</button>
             <button id="upload-tab" class="px-4 py-2 text-lg font-medium text-gray-400 border-b-2 border-transparent hover:text-white">Upload Image</button>
         </div>
 
-        <!-- Content Area -->
         <div id="content-area">
-            <!-- Webcam Content -->
             <div id="webcam-content">
                 <div id="webcam-container" class="mt-6 rounded-lg overflow-hidden w-full aspect-video bg-gray-900 flex items-center justify-center">
                     <p id="webcam-placeholder" class="text-gray-500">Camera will appear here</p>
@@ -48,7 +43,6 @@
                 </button>
             </div>
 
-            <!-- Upload Content (hidden by default) -->
             <div id="upload-content" class="hidden">
                 <div id="image-preview-container" class="mt-6 rounded-lg overflow-hidden w-full aspect-video bg-gray-900 flex items-center justify-center">
                     <img id="image-preview" class="hidden max-h-full max-w-full" />
@@ -69,19 +63,21 @@
     </div>
     
     <footer class="mt-8 text-center text-gray-500 text-sm">
-        <p>Powered by Teachable Machine & TensorFlow.js</p>
+        <p>Powered by TensorFlow.js</p>
     </footer>
 
-    <!-- TensorFlow.js and Teachable Machine Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 
     <script type="text/javascript">
-        // --- Teachable Machine Model & UI Logic ---
+        // --- Model & UI Logic ---
 
         const URL = "./";
         let model, webcam, labelContainer, maxPredictions;
         let animationFrameId;
+
+        // A global variable to hold our labels
+        let classLabels;
 
         // --- DOM Elements ---
         const webcamTab = document.getElementById('webcam-tab');
@@ -130,16 +126,13 @@
         }
 
         // --- Model Initialization ---
-        // A global variable to hold our labels
-        let classLabels;
-    
         async function loadModel() {
             const modelURL = URL + "model.json";
             const metadataURL = URL + "metadata.json";
             try {
                 // Load the model using the correct TensorFlow.js function
                 model = await tf.loadGraphModel(modelURL);
-    
+
                 // Manually fetch and parse the metadata.json
                 const metadataResponse = await fetch(metadataURL);
                 const metadata = await metadataResponse.json();
@@ -148,7 +141,7 @@
                 classLabels = metadata.classes.map(c => c.label);
                 
                 maxPredictions = classLabels.length;
-    
+
             } catch (error) {
                 // Log the detailed error to the console
                 console.error("Error loading model:", error);
@@ -180,7 +173,6 @@
 
                 webcamContainer.innerHTML = '';
                 webcamContainer.appendChild(webcam.canvas);
-                createLabelContainer();
                 startButton.classList.add('hidden');
             } catch (e) {
                 console.error("Could not start webcam", e);
@@ -234,7 +226,6 @@
                     
                     // Wait for image to be fully loaded in the DOM before prediction
                     imagePreview.onload = async () => {
-                        createLabelContainer();
                         await predict(imagePreview);
                         loadingSpinner.classList.add('hidden');
                     }
@@ -244,58 +235,57 @@
         });
 
         // --- Shared Prediction Logic ---
-       async function predict(imageElement) {
+        async function predict(imageElement) {
             // Pre-process the image into a tensor
             const tensor = tf.browser.fromPixels(imageElement)
                 .resizeNearestNeighbor([224, 224]) // Resize to your model's expected input size
                 .toFloat()
                 .expandDims();
-        
+
             // Predict and get the output tensor
             const predictionTensor = model.predict(tensor);
             // Get the prediction data as a normal JavaScript array
             const probabilities = await predictionTensor.data();
-        
-            // Update the label container with the results
-            for (let i = 0; i < maxPredictions; i++) {
-                const classPrediction = classLabels[i]; // Get class name from our labels
-                const probability = (probabilities[i] * 100);
-                const labelDiv = labelContainer.childNodes[i].childNodes[0];
-                const progressBar = labelContainer.childNodes[i].childNodes[1].childNodes[0];
-        
-                labelDiv.innerHTML = classPrediction;
-                progressBar.style.width = probability.toFixed(2) + "%";
-                progressBar.innerHTML = probability.toFixed(2) + "%";
+
+            // --- NEW LOGIC START ---
+
+            // Find the index of the highest probability
+            let maxProbability = 0;
+            let maxIndex = 0;
+            for (let i = 0; i < probabilities.length; i++) {
+                if (probabilities[i] > maxProbability) {
+                    maxProbability = probabilities[i];
+                    maxIndex = i;
+                }
             }
-        
+
+            // Get the top breed name and its accuracy
+            const topBreed = classLabels[maxIndex];
+            const topAccuracy = (maxProbability * 100).toFixed(2);
+
+            // Clear the previous results from the label container
+            labelContainer.innerHTML = '';
+
+            // Create a new, styled element to display the top result
+            const resultDiv = document.createElement("div");
+            resultDiv.className = "text-center p-4 bg-gray-700 rounded-lg shadow-md";
+            // Clean up the breed name (e.g., "Afghan_hound" becomes "Afghan hound")
+            const formattedBreedName = topBreed.replace(/_/g, ' ');
+
+            resultDiv.innerHTML = `
+                <p class="text-xl font-medium text-gray-300">Top Match</p>
+                <p class="text-3xl font-bold text-white mt-1 capitalize">${formattedBreedName}</p>
+                <p class="text-lg font-semibold text-blue-400 mt-2">${topAccuracy}% Accuracy</p>
+            `;
+            labelContainer.appendChild(resultDiv);
+
+            // --- NEW LOGIC END ---
+
             // Clean up memory by disposing of the tensors
             tensor.dispose();
             predictionTensor.dispose();
-        }
-        
-        function createLabelContainer() {
-            labelContainer.innerHTML = ''; // Clear previous labels
-            for (let i = 0; i < maxPredictions; i++) { 
-                const div = document.createElement("div");
-                div.className = "flex items-center justify-between";
-                const label = document.createElement("div");
-                label.className = "w-1/4 text-lg font-medium text-gray-200";
-                const progressBarContainer = document.createElement("div");
-                progressBarContainer.className = "w-3/4 bg-gray-700 rounded-full h-6";
-                const progressBar = document.createElement("div");
-                progressBar.className = "bg-blue-600 h-6 rounded-full text-xs font-medium text-blue-100 text-center p-1 leading-none transition-all duration-300 ease-in-out";
-                progressBar.style.width = "0%";
-                
-                progressBarContainer.appendChild(progressBar);
-                div.appendChild(label);
-                div.appendChild(progressBarContainer);
-                labelContainer.appendChild(div);
-            }
         }
 
     </script>
 </body>
 </html>
-
-
-
