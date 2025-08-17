@@ -241,18 +241,33 @@
         });
 
         // --- Shared Prediction Logic ---
-        async function predict(imageElement) {
-            const prediction = await model.predict(imageElement);
+       async function predict(imageElement) {
+            // Pre-process the image into a tensor
+            const tensor = tf.browser.fromPixels(imageElement)
+                .resizeNearestNeighbor([224, 224]) // Resize to your model's expected input size
+                .toFloat()
+                .expandDims();
+        
+            // Predict and get the output tensor
+            const predictionTensor = model.predict(tensor);
+            // Get the prediction data as a normal JavaScript array
+            const probabilities = await predictionTensor.data();
+        
+            // Update the label container with the results
             for (let i = 0; i < maxPredictions; i++) {
-                const classPrediction = prediction[i].className;
-                const probability = (prediction[i].probability * 100);
+                const classPrediction = classLabels[i]; // Get class name from our labels
+                const probability = (probabilities[i] * 100);
                 const labelDiv = labelContainer.childNodes[i].childNodes[0];
                 const progressBar = labelContainer.childNodes[i].childNodes[1].childNodes[0];
-                
+        
                 labelDiv.innerHTML = classPrediction;
                 progressBar.style.width = probability.toFixed(2) + "%";
                 progressBar.innerHTML = probability.toFixed(2) + "%";
             }
+        
+            // Clean up memory by disposing of the tensors
+            tensor.dispose();
+            predictionTensor.dispose();
         }
         
         function createLabelContainer() {
@@ -278,4 +293,5 @@
     </script>
 </body>
 </html>
+
 
