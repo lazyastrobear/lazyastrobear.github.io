@@ -129,17 +129,12 @@
             const modelURL = URL + "model.json";
             const metadataURL = URL + "metadata.json";
             try {
-                // Load the model using the correct TensorFlow.js function
-                model = await tf.loadGraphModel(modelURL);
-
-                // Manually fetch and parse the metadata.json
-                const metadataResponse = await fetch(metadataURL);
-                const metadata = await metadataResponse.json();
+                // Using tmImage.load to handle model and metadata loading together
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
                 
-                // This is the only line that has been changed
-                classLabels = metadata.classes.map(c => c.label);
-                
-                maxPredictions = classLabels.length;
+                // Store the class labels from the model's metadata
+                classLabels = model.getClassLabels();
 
             } catch (error) {
                 // Log the detailed error to the console
@@ -235,32 +230,20 @@
 
         // --- Shared Prediction Logic ---
         async function predict(imageElement) {
-            // Pre-process the image into a tensor
-            const tensor = tf.browser.fromPixels(imageElement)
-                .resizeNearestNeighbor([224, 224]) // Resize to your model's expected input size
-                .toFloat()
-                .expandDims();
+            // Predict using the Teachable Machine model
+            const prediction = await model.predict(imageElement);
 
-            // Predict and get the output tensor
-            const predictionTensor = model.predict(tensor);
-            // Get the prediction data as a normal JavaScript array
-            const probabilities = await predictionTensor.data();
-
-            // --- NEW LOGIC START ---
-
-            // Find the index of the highest probability
-            let maxProbability = 0;
-            let maxIndex = 0;
-            for (let i = 0; i < probabilities.length; i++) {
-                if (probabilities[i] > maxProbability) {
-                    maxProbability = probabilities[i];
-                    maxIndex = i;
+            // Find the prediction with the highest probability
+            let topPrediction = prediction[0];
+            for (let i = 1; i < maxPredictions; i++) {
+                if (prediction[i].probability > topPrediction.probability) {
+                    topPrediction = prediction[i];
                 }
             }
 
-            // Get the top breed name and its accuracy
-            const topBreed = classLabels[maxIndex];
-            const topAccuracy = (maxProbability * 100).toFixed(2);
+            // Get the top class name and its accuracy
+            const topClass = topPrediction.className;
+            const topAccuracy = (topPrediction.probability * 100).toFixed(2);
 
             // Clear the previous results from the label container
             labelContainer.innerHTML = '';
@@ -268,24 +251,18 @@
             // Create a new, styled element to display the top result
             const resultDiv = document.createElement("div");
             resultDiv.className = "text-center p-4 bg-gray-700 rounded-lg shadow-md";
-            // Clean up the breed name (e.g., "Afghan_hound" becomes "Afghan hound")
-            const formattedBreedName = topBreed.replace(/_/g, ' ');
+            
+            // Clean up the class name (e.g., "Afghan_hound" becomes "Afghan hound")
+            const formattedClassName = topClass.replace(/_/g, ' ');
 
             resultDiv.innerHTML = `
                 <p class="text-xl font-medium text-gray-300">Top Match</p>
-                <p class="text-3xl font-bold text-white mt-1 capitalize">${formattedBreedName}</p>
+                <p class="text-3xl font-bold text-white mt-1 capitalize">${formattedClassName}</p>
                 <p class="text-lg font-semibold text-blue-400 mt-2">${topAccuracy}% Accuracy</p>
             `;
             labelContainer.appendChild(resultDiv);
-
-            // --- NEW LOGIC END ---
-
-            // Clean up memory by disposing of the tensors
-            tensor.dispose();
-            predictionTensor.dispose();
         }
 
     </script>
 </body>
 </html>
-
